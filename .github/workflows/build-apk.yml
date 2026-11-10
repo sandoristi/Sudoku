@@ -1,0 +1,61 @@
+name: APK epitese
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kod letoltese
+        uses: actions/checkout@v4
+
+      - name: Node.js beallitasa
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Java beallitasa
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Fuggosegek telepitese
+        run: npm install
+
+      - name: Android projekt letrehozasa
+        run: npx cap add android
+
+      - name: Pillango ikonok es hatter beallitasa
+        run: |
+          cp -r icons/res/. android/app/src/main/res/
+          sed -i 's#@drawable/splash#@color/butterfly_bg#g' android/app/src/main/res/values/styles.xml
+
+      - name: Weboldal bemasolasa
+        run: npx cap sync android
+
+      - name: APK epitese
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: APK feltoltese letoltesre
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sudoku-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: APK kiadasa (kozvetlen letoltes a Releases oldalrol)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk Sudoku.apk
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest Sudoku.apk --title "Sudoku APK" --notes "Telepitheto Android APK (debug)." --target "${{ github.sha }}"

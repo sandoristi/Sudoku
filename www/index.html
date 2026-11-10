@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#f28c28">
+<title>Sudoku</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cg stroke='%237a3b00' stroke-width='1.2' stroke-linejoin='round'%3E%3Cpolygon fill='%23f28c28' points='48,44 30,14 12,12 6,30 14,48 34,54'/%3E%3Cpolygon fill='%23f28c28' points='52,44 70,14 88,12 94,30 86,48 66,54'/%3E%3Cpolygon fill='%23ffc83d' points='48,52 30,58 18,72 22,88 38,86 48,68'/%3E%3Cpolygon fill='%23ffc83d' points='52,52 70,58 82,72 78,88 62,86 52,68'/%3E%3C/g%3E%3Crect x='46.5' y='30' width='7' height='54' rx='3.5' fill='%233a1f0a'/%3E%3Ccircle cx='50' cy='30' r='5.5' fill='%233a1f0a'/%3E%3Cpath d='M48.5 27 40 8M51.5 27 60 8' stroke='%233a1f0a' stroke-width='1.6' fill='none'/%3E%3C/svg%3E">
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:#f0f0f0;font-family:"Segoe UI",system-ui,Roboto,sans-serif;color:#222;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  .wrap{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;align-items:flex-start;padding:12px}
+  #board{display:grid;grid-template-columns:repeat(9,1fr);width:min(94vw,540px);aspect-ratio:1;
+    background:#fff;border:3px solid #000;touch-action:manipulation}
+  .cell{display:flex;align-items:center;justify-content:center;font-size:clamp(18px,6.2vw,32px);
+    border:1px solid #b0b0b0;cursor:pointer;color:#1f5fbf}
+  .cell.fixed{color:#000;font-weight:700}
+  .cell.bad{color:#d62728}
+  .cell.rel{background:#eef3fb}
+  .cell.sel{background:#cfe2ff}
+  .cell.hint{background:#c6efce !important}
+  .cell.cb{border-right:2px solid #000}
+  .cell.rb{border-bottom:2px solid #000}
+  .side{width:min(94vw,260px);display:flex;flex-direction:column;gap:8px;align-items:stretch}
+  h3{margin:4px 0 0;text-align:center;font-size:16px}
+  .small{font-size:12px;color:#555;text-align:center}
+  #levels{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}
+  #levels button{padding:8px 0;font-size:15px;border:1px solid #999;border-radius:6px;background:#fff}
+  #levels button.on{background:#f28c28;color:#fff;border-color:#b45f00;font-weight:700}
+  .btn{font-size:16px;font-weight:700;padding:12px;border:1px solid #888;border-radius:8px;background:#fff;touch-action:manipulation}
+  .btn:active{background:#ddd}
+  #pad{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  #pad button{font-size:22px;padding:10px 0;border:1px solid #888;border-radius:8px;background:#fff}
+  #pad button:active{background:#ddd}
+  #status{text-align:center;font-size:14px;min-height:20px;width:100%}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:10}
+  .overlay.show{display:flex}
+  .dlg{background:#fff;border-radius:14px;padding:24px 28px;text-align:center;max-width:86vw}
+  .dlg h2{margin:0 0 18px;font-size:22px}
+  .dlg .row{display:flex;gap:12px;justify-content:center}
+  .dlg button{font-size:18px;font-weight:700;padding:12px 26px;border-radius:8px;border:1px solid #888;background:#fff}
+  #yes{background:#2e9e4f;color:#fff;border-color:#1f7a3a}
+  #no{background:#d9534f;color:#fff;border-color:#a94442}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="board"></div>
+  <div class="side">
+    <h3>Nehézségi szint</h3>
+    <div class="small">1 = legkönnyebb · 9 = legnehezebb</div>
+    <div id="levels"></div>
+    <button class="btn" id="newBtn">Új játék</button>
+    <button class="btn" id="helpBtn">Segítség</button>
+    <div class="small">Koppintás: egy szám · 10 mp nyomva tartva: megoldás</div>
+    <div id="pad"></div>
+    <button class="btn" id="delBtn">Töröl</button>
+  </div>
+  <div id="status"></div>
+</div>
+
+<div class="overlay" id="winOv"><div class="dlg">
+  <h2>Ügyes vagy! Még egy játék?</h2>
+  <div class="row"><button id="yes">IGEN</button><button id="no">NEM</button></div>
+</div></div>
+<div class="overlay" id="stopOv"><div class="dlg">
+  <h2>A játék leállt.</h2>
+  <div class="small">Az újraindításhoz frissítsd az oldalt.</div>
+</div></div>
+
+<script>
+// ==LOGIC START==
+const CLUES = {1:46,2:40,3:36,4:33,5:30,6:28,7:26,8:25,9:23};
+const boxOf = (r,c) => Math.floor(r/3)*3 + Math.floor(c/3);
+function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+function popcount(x){ let n=0; while(x){ n+=x&1; x>>=1; } return n; }
+function makeMasks(g){
+  const rows=Array(9).fill(0), cols=Array(9).fill(0), boxes=Array(9).fill(0);
+  for(let r=0;r<9;r++) for(let c=0;c<9;c++){ const v=g[r][c]; if(v){ const b=1<<(v-1); rows[r]|=b; cols[c]|=b; boxes[boxOf(r,c)]|=b; } }
+  return {rows,cols,boxes};
+}
+function bestCell(g,m){
+  let best=null, bestN=10;
+  for(let r=0;r<9;r++) for(let c=0;c<9;c++){
+    if(g[r][c]===0){
+      const mask = ~(m.rows[r]|m.cols[c]|m.boxes[boxOf(r,c)]) & 0x1FF;
+      const n = popcount(mask);
+      if(n<bestN){ best={r,c,mask}; bestN=n; if(n===0) return best; }
+    }
+  }
+  return best;
+}
+function fillRandom(){
+  const g=Array.from({length:9},()=>Array(9).fill(0));
+  const m=makeMasks(g);
+  function rec(){
+    const cell=bestCell(g,m);
+    if(!cell) return true;
+    if(cell.mask===0) return false;
+    const {r,c,mask}=cell, b=boxOf(r,c), ds=[];
+    for(let d=0;d<9;d++) if(mask>>d&1) ds.push(d);
+    shuffle(ds);
+    for(const d of ds){
+      const bit=1<<d; g[r][c]=d+1; m.rows[r]|=bit; m.cols[c]|=bit; m.boxes[b]|=bit;
+      if(rec()) return true;
+      g[r][c]=0; m.rows[r]&=~bit; m.cols[c]&=~bit; m.boxes[b]&=~bit;
+    }
+    return false;
+  }
+  rec();
+  return g;
+}
+function countSolutions(puzzle,limit=2){
+  const g=puzzle.map(r=>r.slice()), m=makeMasks(g); let count=0;
+  function rec(){
+    const cell=bestCell(g,m);
+    if(!cell){ count++; return count>=limit; }
+    if(cell.mask===0) return false;
+    const {r,c,mask}=cell, b=boxOf(r,c);
+    for(let d=0;d<9;d++){
+      if(mask>>d&1){
+        const bit=1<<d; g[r][c]=d+1; m.rows[r]|=bit; m.cols[c]|=bit; m.boxes[b]|=bit;
+        if(rec()) return true;
+        g[r][c]=0; m.rows[r]&=~bit; m.cols[c]&=~bit; m.boxes[b]&=~bit;
+      }
+    }
+    return false;
+  }
+  rec();
+  return count;
+}
+function generateOnce(level){
+  const solution=fillRandom();
+  const puzzle=solution.map(r=>r.slice());
+  const target=CLUES[level];
+  let givens=81;
+  const cells=[]; for(let r=0;r<9;r++) for(let c=0;c<9;c++) cells.push([r,c]);
+  shuffle(cells);
+  for(const [r,c] of cells){
+    if(givens<=target) break;
+    const v=puzzle[r][c]; puzzle[r][c]=0;
+    if(countSolutions(puzzle)===1) givens--; else puzzle[r][c]=v;
+  }
+  return {puzzle,solution,givens};
+}
+function generate(level){
+  let best=null;
+  const tries = level>=8 ? 40 : 1;
+  for(let i=0;i<tries;i++){
+    const res=generateOnce(level);
+    if(!best || res.givens<best.givens) best=res;
+    if(res.givens<=CLUES[level]) break;
+  }
+  return best;
+}
+// ==LOGIC END==
+
+// ------------------------------------------------------------------ UI
+const LONG_MS = 10000, HINT_MS = 2000;
+let solution=null, fixed=[], vals=[], sel=null, finished=false, stopped=false;
+let level=1, hints=new Map(), pressTimer=null, tickTimer=null, pressStart=0, longFired=false, pressing=false;
+
+const $ = id => document.getElementById(id);
+const boardEl=$('board'), statusEl=$('status');
+const cellEls=[];
+for(let r=0;r<9;r++) for(let c=0;c<9;c++){
+  const d=document.createElement('div');
+  d.className='cell'+(c%3===2&&c<8?' cb':'')+(r%3===2&&r<8?' rb':'');
+  d.addEventListener('click',()=>{ if(stopped) return; sel=[r,c]; render(); });
+  boardEl.appendChild(d); cellEls.push(d);
+}
+const levelsEl=$('levels');
+for(let i=1;i<=9;i++){
+  const b=document.createElement('button'); b.textContent=i;
+  b.addEventListener('click',()=>{ level=i; renderLevels(); });
+  levelsEl.appendChild(b);
+}
+function renderLevels(){ [...levelsEl.children].forEach((b,i)=>b.classList.toggle('on',i+1===level)); }
+const padEl=$('pad');
+for(let i=1;i<=9;i++){
+  const b=document.createElement('button'); b.textContent=i;
+  b.addEventListener('click',()=>enter(i)); padEl.appendChild(b);
+}
+$('delBtn').addEventListener('click',()=>enter(0));
+$('newBtn').addEventListener('click',newGame);
+
+function conflict(r,c){
+  const v=vals[r][c]; if(!v) return false;
+  for(let i=0;i<9;i++){
+    if(i!==c && vals[r][i]===v) return true;
+    if(i!==r && vals[i][c]===v) return true;
+  }
+  const br=r-r%3, bc=c-c%3;
+  for(let rr=br;rr<br+3;rr++) for(let cc=bc;cc<bc+3;cc++)
+    if((rr!==r||cc!==c) && vals[rr][cc]===v) return true;
+  return false;
+}
+function render(){
+  for(let r=0;r<9;r++) for(let c=0;c<9;c++){
+    const el=cellEls[r*9+c], v=vals[r][c];
+    el.textContent = v||'';
+    el.classList.toggle('fixed',fixed[r][c]);
+    el.classList.toggle('bad',!fixed[r][c] && conflict(r,c));
+    el.classList.toggle('hint',hints.has(r*9+c));
+    const isSel = sel && sel[0]===r && sel[1]===c;
+    const rel = sel && !isSel && (sel[0]===r||sel[1]===c||boxOf(sel[0],sel[1])===boxOf(r,c));
+    el.classList.toggle('sel',!!isSel);
+    el.classList.toggle('rel',!!rel);
+  }
+}
+function setStatus(t){ statusEl.textContent=t; }
+
+function newGame(){
+  cancelPress();
+  hints.forEach(t=>clearTimeout(t)); hints.clear();
+  $('winOv').classList.remove('show');
+  setStatus('Rejtvény generálása...');
+  setTimeout(()=>{
+    const g=generate(level);
+    solution=g.solution;
+    vals=g.puzzle.map(r=>r.slice());
+    fixed=g.puzzle.map(r=>r.map(v=>v!==0));
+    sel=null; finished=false;
+    setStatus('Szint: '+level);
+    render();
+  },30);
+}
+function enter(n){
+  if(finished||stopped||!sel) return;
+  const [r,c]=sel; if(fixed[r][c]) return;
+  vals[r][c]=n; render(); checkWin();
+}
+document.addEventListener('keydown',e=>{
+  if(stopped) return;
+  if(e.key.startsWith('Arrow')){
+    let [r,c]=sel||[0,0];
+    if(e.key==='ArrowUp') r=(r+8)%9; else if(e.key==='ArrowDown') r=(r+1)%9;
+    else if(e.key==='ArrowLeft') c=(c+8)%9; else c=(c+1)%9;
+    sel=[r,c]; render(); e.preventDefault();
+  } else if(/^[1-9]$/.test(e.key)) enter(+e.key);
+  else if(e.key==='0'||e.key==='Backspace'||e.key==='Delete') enter(0);
+});
+
+// ---- Segítség: koppintás = 1 szám (2 mp zöld), 10 mp nyomva tartás = megoldás
+const helpBtn=$('helpBtn');
+function cancelPress(){
+  pressing=false;
+  clearTimeout(pressTimer); clearInterval(tickTimer); pressTimer=tickTimer=null;
+}
+helpBtn.addEventListener('pointerdown',e=>{
+  if(finished||stopped) return;
+  pressing=true; longFired=false; pressStart=Date.now();
+  helpBtn.setPointerCapture && helpBtn.setPointerCapture(e.pointerId);
+  pressTimer=setTimeout(longPress,LONG_MS);
+  tickTimer=setInterval(()=>{
+    const left=Math.ceil((LONG_MS-(Date.now()-pressStart))/1000);
+    if(left<=9) setStatus('Tartsd még '+Math.max(left,0)+' mp-ig a megoldásért...');
+  },250);
+});
+helpBtn.addEventListener('pointerup',()=>{
+  const was=pressing; cancelPress();
+  if(!was||longFired||finished||stopped) return;
+  setStatus('Szint: '+level); giveHint();
+});
+helpBtn.addEventListener('pointercancel',()=>{ cancelPress(); setStatus('Szint: '+level); });
+helpBtn.addEventListener('contextmenu',e=>e.preventDefault());
+
+function giveHint(){
+  const wrong=[], empty=[];
+  for(let r=0;r<9;r++) for(let c=0;c<9;c++){
+    if(vals[r][c]===0) empty.push([r,c]);
+    else if(vals[r][c]!==solution[r][c]) wrong.push([r,c]);
+  }
+  const pool=wrong.length?wrong:empty; if(!pool.length) return;
+  const [r,c]=pool[Math.floor(Math.random()*pool.length)];
+  vals[r][c]=solution[r][c];
+  const key=r*9+c;
+  if(hints.has(key)) clearTimeout(hints.get(key));
+  hints.set(key,setTimeout(()=>{ hints.delete(key); render(); },HINT_MS));
+  render();
+  setTimeout(checkWin,HINT_MS+100);
+}
+function longPress(){
+  longFired=true; cancelPress();
+  vals=solution.map(r=>r.slice());
+  finished=true;
+  setStatus('A megoldás látható. Kezdj új játékot!');
+  render();
+}
+
+// ---- Győzelem
+function checkWin(){
+  if(finished||stopped||!solution) return;
+  for(let r=0;r<9;r++) for(let c=0;c<9;c++) if(vals[r][c]!==solution[r][c]) return;
+  finished=true; render();
+  $('winOv').classList.add('show');
+}
+$('yes').addEventListener('click',()=>{ $('winOv').classList.remove('show'); newGame(); });
+$('no').addEventListener('click',()=>{
+  stopped=true; cancelPress();
+  $('winOv').classList.remove('show'); $('stopOv').classList.add('show');
+});
+
+renderLevels();
+newGame();
+</script>
+</body>
+</html>
